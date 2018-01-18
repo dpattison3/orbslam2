@@ -37,21 +37,56 @@
 
 using namespace std;
 
+namespace ORB_SLAM2
+{
+
 class ImageGrabber
 {
 public:
-    ImageGrabber(ORB_SLAM2::System* pSLAM):mpSLAM(pSLAM){}
+    ImageGrabber(System* pSLAM):mpSLAM(pSLAM){}
 
     void GrabStereo(const sensor_msgs::ImageConstPtr& msgLeft,const sensor_msgs::ImageConstPtr& msgRight);
 
-    ORB_SLAM2::System* mpSLAM;
+    System* mpSLAM;
     bool do_rectify;
     cv::Mat M1l,M2l,M1r,M2r;
 };
 
+
+void ImageGrabber::GrabStereo(const sensor_msgs::ImageConstPtr& msgLeft,const sensor_msgs::ImageConstPtr& msgRight)
+{
+    // Copy the ros image message to cv::Mat.
+    cv_bridge::CvImageConstPtr cv_ptrLeft;
+    cv_bridge::CvImageConstPtr cv_ptrRight;
+    try
+    {
+        cv_ptrLeft = cv_bridge::toCvShare(msgLeft);
+        cv_ptrRight = cv_bridge::toCvShare(msgRight);
+    }
+    catch (cv_bridge::Exception& e)
+    {
+        ROS_ERROR("cv_bridge exception: %s", e.what());
+        return;
+    }
+
+
+    if(do_rectify)
+    {
+        cv::Mat imLeft, imRight;
+        cv::remap(cv_ptrLeft->image,imLeft,M1l,M2l,cv::INTER_LINEAR);
+        cv::remap(cv_ptrRight->image,imRight,M1r,M2r,cv::INTER_LINEAR);
+        mpSLAM->TrackStereo(imLeft,imRight,cv_ptrLeft->header.stamp.toSec());
+    }
+    else
+    {
+        mpSLAM->TrackStereo(cv_ptrLeft->image,cv_ptrRight->image,cv_ptrLeft->header.stamp.toSec());
+    }
+}
+}
+
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "Stereo");
+    ros::init(argc, argv, "stereo_slam");
     ros::start();
     ros::NodeHandle nh;
 
@@ -68,7 +103,7 @@ int main(int argc, char **argv)
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
     ORB_SLAM2::System SLAM(vocabularyFilePath, settingsFilePath, ORB_SLAM2::System::STEREO, visualize);
 
-    ImageGrabber igb(&SLAM);
+    ORB_SLAM2::ImageGrabber igb(&SLAM);
     igb.do_rectify = rectify;
 
     if(igb.do_rectify)
@@ -115,7 +150,7 @@ int main(int argc, char **argv)
     message_filters::Subscriber<sensor_msgs::Image> right_sub(nh, rightCameraTopic, 1);
     typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::Image, sensor_msgs::Image> sync_pol;
     message_filters::Synchronizer<sync_pol> sync(sync_pol(10), left_sub,right_sub);
-    sync.registerCallback(boost::bind(&ImageGrabber::GrabStereo,&igb,_1,_2));
+    sync.registerCallback(boost::bind(&ORB_SLAM2::ImageGrabber::GrabStereo,&igb,_1,_2));
 
     ros::spin();
 
@@ -131,34 +166,3 @@ int main(int argc, char **argv)
 
     return 0;
 }
-
-void ImageGrabber::GrabStereo(const sensor_msgs::ImageConstPtr& msgLeft,const sensor_msgs::ImageConstPtr& msgRight)
-{
-    // Copy the ros image message to cv::Mat.
-    cv_bridge::CvImageConstPtr cv_ptrLeft;
-    cv_bridge::CvImageConstPtr cv_ptrRight;
-    try
-    {
-        cv_ptrLeft = cv_bridge::toCvShare(msgLeft);
-        cv_ptrRight = cv_bridge::toCvShare(msgRight);
-    }
-    catch (cv_bridge::Exception& e)
-    {
-        ROS_ERROR("cv_bridge exception: %s", e.what());
-        return;
-    }
-
-
-    if(do_rectify)
-    {
-        cv::Mat imLeft, imRight;
-        cv::remap(cv_ptrLeft->image,imLeft,M1l,M2l,cv::INTER_LINEAR);
-        cv::remap(cv_ptrRight->image,imRight,M1r,M2r,cv::INTER_LINEAR);
-        mpSLAM->TrackStereo(imLeft,imRight,cv_ptrLeft->header.stamp.toSec());
-    }
-    else
-    {
-        mpSLAM->TrackStereo(cv_ptrLeft->image,cv_ptrRight->image,cv_ptrLeft->header.stamp.toSec());
-    }
-}
-

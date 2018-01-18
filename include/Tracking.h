@@ -22,7 +22,7 @@
 #ifndef TRACKING_H
 #define TRACKING_H
 
-#include<opencv2/core/core.hpp>
+#include <opencv2/opencv.hpp>
 #include<opencv2/features2d/features2d.hpp>
 
 #include"Viewer.h"
@@ -39,6 +39,8 @@
 #include "System.h"
 
 #include <mutex>
+
+#include <ros/ros.h>
 
 namespace ORB_SLAM2
 {
@@ -109,6 +111,8 @@ public:
     list<KeyFrame*> mlpReferences;
     list<double> mlFrameTimes;
     list<bool> mlbLost;
+
+    ros::Publisher mIncrementalPosePublisher;
 
     // True if local mapping is deactivated and we are performing only localization
     bool mbOnlyTracking;

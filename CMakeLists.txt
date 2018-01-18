@@ -18,6 +18,9 @@ LIST(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake_modules)
 find_package(OpenCV 2.4.3 REQUIRED)
 find_package(Eigen3 3.1.0 REQUIRED)
 find_package(Pangolin REQUIRED)
+find_package(Boost REQUIRED)
+
+catkin_package()
 
 include_directories(include
 ${PROJECT_SOURCE_DIR}
@@ -35,7 +38,8 @@ ${EIGEN3_LIBS}
 ${Pangolin_LIBRARIES}
 ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
 ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
-${PROJECT_SOURCE_DIR}/lib/libORB_SLAM2.so
+${Boost_LIBRARIES}
+#${PROJECT_SOURCE_DIR}/lib/libORB_SLAM2.so
 )
 
 # Node for monocular camera
@@ -57,11 +61,32 @@ ${PROJECT_SOURCE_DIR}/lib/libORB_SLAM2.so
 #)
 
 # Node for stereo camera
-add_executable(stereo
+add_executable(stereo_slam
 src/ros_stereo.cc
+src/Converter.cc
+src/KeyFrame.cc
+src/Map.cc
+src/ORBextractor.cc
+src/Sim3Solver.cc
+src/Frame.cc
+src/KeyFrameDatabase.cc
+src/MapDrawer.cc
+src/ORBmatcher.cc
+src/System.cc
+src/FrameDrawer.cc
+src/LocalMapping.cc
+src/MapPoint.cc
+src/PnPsolver.cc
+src/Tracking.cc
+src/Initializer.cc
+src/LoopClosing.cc
+src/Optimizer.cc
+src/Viewer.cc
 )
 
-target_link_libraries(stereo
+target_link_libraries(stereo_slam
+${OpenCV_LIBRARIES}
+${OpenCV_LIBS}
 ${LIBS}
 )
 
