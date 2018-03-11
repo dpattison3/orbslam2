@@ -116,8 +116,6 @@ System::System(const string &strVocFile, const string &strSettingsFile, const eS
 
 cv::Mat System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timestamp)
 {
-    auto start = std::chrono::high_resolution_clock::now();
-
     if(mSensor!=STEREO)
     {
         cerr << "ERROR: you called TrackStereo but input sensor was not set to STEREO." << endl;
@@ -160,22 +158,10 @@ cv::Mat System::TrackStereo(const cv::Mat &imLeft, const cv::Mat &imRight, const
 
     cv::Mat Tcw = mpTracker->GrabImageStereo(imLeft,imRight,timestamp);
 
-    std::cout<<Tcw<<std::endl<<std::endl;
-
-    if (mpTracker->mState == Tracking::OK)
-    {
-      /* maybe we should publish incremental poses from here - watch out no ros stuff in this file */
-    }
-
-    // TODO figure out why a mutex is needed here
     unique_lock<mutex> lock2(mMutexState);
     mTrackingState = mpTracker->mState;
     mTrackedMapPoints = mpTracker->mCurrentFrame.mvpMapPoints;
     mTrackedKeyPointsUn = mpTracker->mCurrentFrame.mvKeysUn;
-
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = end - start;
-    std::cout<<"total tracking + feature extraction + overhead: "<<duration.count()<<std::endl;
 
     return Tcw;
 }

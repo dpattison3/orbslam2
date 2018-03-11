@@ -41,6 +41,7 @@
 #include <mutex>
 
 #include <ros/ros.h>
+#include <sensor_msgs/Imu.h>
 
 namespace ORB_SLAM2
 {
@@ -97,6 +98,8 @@ public:
     // Current Frame
     Frame mCurrentFrame;
     cv::Mat mImGray;
+    cv::Mat mImRightColor;
+    cv::Mat mImLeftColor;
 
     // Initialization Variables (Monocular)
     std::vector<int> mvIniLastMatches;
@@ -113,11 +116,14 @@ public:
     list<bool> mlbLost;
 
     ros::Publisher mIncrementalPosePublisher;
+    ros::Publisher mGlobalPosePublisher;
 
     // True if local mapping is deactivated and we are performing only localization
     bool mbOnlyTracking;
 
     void Reset();
+
+    void imuCallback(const sensor_msgs::ImuConstPtr &imu);
 
 protected:
 
@@ -213,6 +219,8 @@ protected:
 
     //Motion Model
     cv::Mat mVelocity;
+    cv::Mat mRotation; // rotation since last frame computed by IMU
+    double mLastIMUTime;
 
     //Color order (true RGB, false BGR, ignored if grayscale)
     bool mbRGB;

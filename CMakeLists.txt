@@ -22,12 +22,14 @@ find_package(Boost REQUIRED)
 
 catkin_package()
 
-include_directories(include
+include_directories(
+include
 ${PROJECT_SOURCE_DIR}
 ${PROJECT_SOURCE_DIR}/src/
 ${PROJECT_SOURCE_DIR}/include/
 ${Pangolin_INCLUDE_DIRS}
 ${catkin_INCLUDE_DIRS}
+${EIGEN_INCLUDE}
 )
 
 
@@ -39,7 +41,6 @@ ${Pangolin_LIBRARIES}
 ${PROJECT_SOURCE_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
 ${PROJECT_SOURCE_DIR}/Thirdparty/g2o/lib/libg2o.so
 ${Boost_LIBRARIES}
-#${PROJECT_SOURCE_DIR}/lib/libORB_SLAM2.so
 )
 
 # Node for monocular camera
@@ -88,5 +89,6 @@ target_link_libraries(stereo_slam
 ${OpenCV_LIBRARIES}
 ${OpenCV_LIBS}
 ${LIBS}
+${EIGEN3_LIBS}
 )
 

@@ -29,10 +29,12 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/time_synchronizer.h>
 #include <message_filters/sync_policies/approximate_time.h>
+#include <geometry_msgs/PoseStamped.h>
 
-#include<opencv2/core/core.hpp>
+#include <opencv2/core/core.hpp>
 
-#include"System.h"
+#include "System.h"
+#include "Tracking.h"
 #include <boost/filesystem.hpp>
 
 using namespace std;
@@ -84,6 +86,7 @@ void ImageGrabber::GrabStereo(const sensor_msgs::ImageConstPtr& msgLeft,const se
 }
 }
 
+
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "stereo_slam");
@@ -97,17 +100,23 @@ int main(int argc, char **argv)
     nh.param<std::string>("/left_camera_topic", leftCameraTopic, "/camera_left");
     nh.param<std::string>("/right_camera_topic", rightCameraTopic, "/camera_right");
     nh.param<bool>("/rectify", rectify, true);
-    nh.param<bool>("/visualize", visualize, false);
+    nh.param<bool>("/visualize", visualize, true);
+
 
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
     ORB_SLAM2::System SLAM(vocabularyFilePath, settingsFilePath, ORB_SLAM2::System::STEREO, visualize);
 
+    ros::Subscriber imuSub = nh.subscribe("/imu/imu", 40, &ORB_SLAM2::Tracking::imuCallback, SLAM.mpTracker);
+    SLAM.mpTracker->mIncrementalPosePublisher = nh.advertise<geometry_msgs::PoseStamped>("/orbslam_incremental", 5);
+    SLAM.mpTracker->mGlobalPosePublisher = nh.advertise<geometry_msgs::PoseStamped>("/orbslam_global", 5);
+
+
     ORB_SLAM2::ImageGrabber igb(&SLAM);
     igb.do_rectify = rectify;
 
     if(igb.do_rectify)
-    {      
+    {
         // Load settings related to stereo calibration
         cv::FileStorage fsSettings(settingsFilePath, cv::FileStorage::READ);
         if(!fsSettings.isOpened())

@@ -37,8 +37,15 @@
 
 #include<mutex>
 #include<chrono>
+#include <string>
+
+#include <geometry_msgs/PoseStamped.h>
+#include <tf/transform_datatypes.h>
+#include <Eigen/Geometry>
 
 using namespace std;
+using namespace std::chrono;
+
 
 namespace ORB_SLAM2
 {
@@ -147,6 +154,9 @@ Tracking::Tracking(System *pSys, ORBVocabulary* pVoc, FrameDrawer *pFrameDrawer,
             mDepthMapFactor = 1.0f/mDepthMapFactor;
     }
 
+    mRotation = cv::Mat::eye(3,3,CV_64F);
+    mLastIMUTime = 0;
+
 }
 
 void Tracking::SetLocalMapper(LocalMapping *pLocalMapper)
@@ -168,6 +178,8 @@ void Tracking::SetViewer(Viewer *pViewer)
 cv::Mat Tracking::GrabImageStereo(const cv::Mat &imRectLeft, const cv::Mat &imRectRight, const double &timestamp)
 {
     mImGray = imRectLeft;
+    mImLeftColor = imRectLeft;
+    mImRightColor = imRectRight;
     cv::Mat imGrayRight = imRectRight;
 
     if(mImGray.channels()==3)
@@ -264,6 +276,26 @@ cv::Mat Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp)
 
     return mCurrentFrame.mTcw.clone();
 }
+
+
+// convenience function for converting a rotation matrix to a quation in ros
+geometry_msgs::Quaternion convertRotationToQuaternion(const cv::Mat& rot)
+{
+  // we are using Eigen's conversion method
+  // initialize Eigen matrix from the given cv::Mat
+  Eigen::Matrix< float,3,3 > rotEig;
+  rotEig << rot.at<float>(0,0), rot.at<float>(0,1), rot.at<float>(0,2),
+            rot.at<float>(1,0), rot.at<float>(1,1), rot.at<float>(1,2),
+            rot.at<float>(2,0), rot.at<float>(2,1), rot.at<float>(2,2);
+  Eigen::Quaternion<float> quaternion{ rotEig };
+  geometry_msgs::Quaternion ret;
+  ret.x = quaternion.x();
+  ret.y = quaternion.y();
+  ret.z = quaternion.z();
+  ret.w = quaternion.w();
+  return ret;
+}
+
 
 void Tracking::Track()
 {
@@ -393,11 +425,12 @@ void Tracking::Track()
                     bOK = bOKReloc || bOKMM;
                 }
             }
-
-            auto end = std::chrono::high_resolution_clock::now();
-            auto duration = end - start;
-            std::cout<<"tracking: "<<duration.count()<<std::endl;
         }
+
+        auto end = high_resolution_clock::now();
+        duration<double> time_span = duration_cast<duration<double>>(end - start);
+        std::cout << "initial tracking: "<< time_span.count() << std::endl;
+        start = end;
 
         mCurrentFrame.mpReferenceKF = mpReferenceKF;
 
@@ -421,12 +454,25 @@ void Tracking::Track()
         else
             mState=LOST;
 
+
+        end = high_resolution_clock::now();
+        time_span = duration_cast<duration<double>>(end - start);
+        std::cout << "tacking local map: "<< time_span.count() << std::endl << std::endl;
+
+
         // Update drawer
         mpFrameDrawer->Update(this);
 
         // If tracking were good, check if we insert a keyframe
         if(bOK)
         {
+            // pure rotation for transforming to ros coordinate reference frame
+            cv::Mat rosRotation = (cv::Mat_<float>(4,4) <<  0,  0, 1, 0,
+                                                           -1,  0, 0, 0,
+                                                            0, -1, 0, 0,
+                                                            0,  0, 0, 1 );
+
+
             // Update motion model
             if(!mLastFrame.mTcw.empty())
             {
@@ -445,11 +491,13 @@ void Tracking::Track()
             {
                 MapPoint* pMP = mCurrentFrame.mvpMapPoints[i];
                 if(pMP)
+                {
                     if(pMP->Observations()<1)
                     {
                         mCurrentFrame.mvbOutlier[i] = false;
                         mCurrentFrame.mvpMapPoints[i]=static_cast<MapPoint*>(NULL);
                     }
+                }
             }
 
             // Delete temporal MapPoints
@@ -462,7 +510,26 @@ void Tracking::Track()
 
             // Check if we need to insert a new keyframe
             if(NeedNewKeyFrame())
+            {
+                // we are adding a new key frame, so we will publish the incremental pose
+                cv::Mat incremental = rosRotation * mpReferenceKF->GetPose() * mCurrentFrame.GetPoseInverse() * rosRotation.t();
+
+                //std::cout << incremental << std::endl;
+
+                geometry_msgs::PoseStampedPtr incMsg{ new geometry_msgs::PoseStamped };
+                incMsg->pose.orientation = convertRotationToQuaternion( incremental.rowRange(0,3).colRange(0,3) );
+                incMsg->pose.position.x = incremental.at<float>(0,3);
+                incMsg->pose.position.y = incremental.at<float>(1,3);
+                incMsg->pose.position.z = incremental.at<float>(2,3);
+                incMsg->header.stamp = ros::Time(mCurrentFrame.mTimeStamp);
+                incMsg->header.frame_id = std::to_string(mpReferenceKF->mnId);
+                incMsg->header.seq = mpReferenceKF->nNextId;
+                if (incMsg->header.seq != 0)
+                  mIncrementalPosePublisher.publish(incMsg);
+
+
                 CreateNewKeyFrame();
+            }
 
             // We allow points with high innovation (considererd outliers by the Huber Function)
             // pass to the new keyframe, so that bundle adjustment will finally decide
@@ -473,6 +540,19 @@ void Tracking::Track()
                 if(mCurrentFrame.mvpMapPoints[i] && mCurrentFrame.mvbOutlier[i])
                     mCurrentFrame.mvpMapPoints[i]=static_cast<MapPoint*>(NULL);
             }
+
+
+            // publish the ros global reference frame position
+            cv::Mat globalPosition = rosRotation * mCurrentFrame.GetPoseInverse() * rosRotation.t();
+
+            geometry_msgs::PoseStampedPtr globalMsg{ new geometry_msgs::PoseStamped };
+            globalMsg->pose.orientation = convertRotationToQuaternion( globalPosition.rowRange(0,3).colRange(0,3) );
+            globalMsg->pose.position.x = globalPosition.at<float>(0,3);
+            globalMsg->pose.position.y = globalPosition.at<float>(1,3);
+            globalMsg->pose.position.z = globalPosition.at<float>(2,3);
+            globalMsg->header.stamp = ros::Time(mCurrentFrame.mTimeStamp);
+            globalMsg->header.frame_id = "orb_slam";
+            mGlobalPosePublisher.publish(globalMsg);
         }
 
         // Reset if the camera get lost soon after initialization
@@ -484,6 +564,7 @@ void Tracking::Track()
                 mpSystem->Reset();
                 return;
             }
+            std::cout << "tracking has been lost" << std::endl;
         }
 
         if(!mCurrentFrame.mpReferenceKF)
@@ -495,7 +576,6 @@ void Tracking::Track()
     // Store frame pose information to retrieve the complete camera trajectory afterwards.
     if(!mCurrentFrame.mTcw.empty())
     {
-        // TODO this is where we want to publish incremental poses
         cv::Mat Tcr = mCurrentFrame.mTcw*mCurrentFrame.mpReferenceKF->GetPoseInverse();
         mlRelativeFramePoses.push_back(Tcr);
         mlpReferences.push_back(mpReferenceKF);
@@ -872,9 +952,46 @@ void Tracking::UpdateLastFrame()
     }
 }
 
+
+void Tracking::imuCallback(const sensor_msgs::ImuConstPtr &imu)
+{
+  // rotation rates
+  double x = imu->angular_velocity.x;
+  double y = imu->angular_velocity.y;
+  double z = imu->angular_velocity.z;
+  double rotationAngle = std::sqrt( std::pow(x,2) + std::pow(y,2) + std::pow(z,2) );
+  // (x,y,z) forms a unit vector of rotation axis
+  x /= rotationAngle;
+  y /= rotationAngle;
+  z /= rotationAngle;
+
+
+  // the rotation angle is actually rotation rate * dt
+  double dt = (mLastIMUTime == 0) ? 0.005 : imu->header.stamp.toSec() - mLastIMUTime;
+  mLastIMUTime = imu->header.stamp.toSec();
+  rotationAngle *= dt;
+
+  // perform Rodrigues formula for incremental rotation matrix
+  cv::Mat k = (cv::Mat_<double>(3,3) << 0, -z,  y,
+                                        z,  0, -x,
+                                       -y,  x,  0 );
+
+  cv::Mat incrementalRotation = cv::Mat::eye(3,3,CV_64F)
+      + std::sin(rotationAngle) * k + (1 - std::cos(rotationAngle)) * k*k;
+  mRotation *= incrementalRotation;
+}
+
 bool Tracking::TrackWithMotionModel()
 {
-    std::cout<<"Tracking with motion model!"<<std::endl;
+    auto start = std::chrono::high_resolution_clock::now();
+    // std::cout<<"Tracking with motion model!"<<std::endl;
+    cv::Mat rosToOrbRotation = (cv::Mat_<double>(3,3) << 0, -1,  0,
+                                                         0,  0, -1,
+                                                         1,  0,  0 );
+    mVelocity.rowRange(0,3).colRange(0,3) = rosToOrbRotation * mRotation;
+    mRotation = cv::Mat::eye(3, 3, CV_64F); // reset incremental rotation
+    // std::cout << mVelocity << std::endl;
+
     ORBmatcher matcher(0.9,true);
 
     // Update last frame pose according to its reference keyframe
@@ -886,16 +1003,21 @@ bool Tracking::TrackWithMotionModel()
     fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
 
     // Project points seen in previous frame
-    int th;
+    // increase accointing for poor motion model fit
+    int th = 15;
+    /*
     if(mSensor!=System::STEREO)
         th=15;
     else
         th=7;
+    */
+
     int nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,th,mSensor==System::MONOCULAR);
 
     // If few matches, uses a wider window search
     if(nmatches<20)
     {
+        std::cout << "failed initial localization with th: " << th << " trying with th: " << 2*th << std::endl;
         fill(mCurrentFrame.mvpMapPoints.begin(),mCurrentFrame.mvpMapPoints.end(),static_cast<MapPoint*>(NULL));
         nmatches = matcher.SearchByProjection(mCurrentFrame,mLastFrame,2*th,mSensor==System::MONOCULAR);
     }
@@ -932,6 +1054,10 @@ bool Tracking::TrackWithMotionModel()
         mbVO = nmatchesMap<10;
         return nmatches>20;
     }
+
+    auto end = high_resolution_clock::now();
+    duration<double> time_span = duration_cast<duration<double>>(end - start);
+    //std::cout << "tracking with motion model: "<< time_span.count() << std::endl;
 
     return nmatchesMap>=10;
 }

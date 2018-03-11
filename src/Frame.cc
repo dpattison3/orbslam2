@@ -63,6 +63,8 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
     :mpORBvocabulary(voc),mpORBextractorLeft(extractorLeft),mpORBextractorRight(extractorRight), mTimeStamp(timeStamp), mK(K.clone()),mDistCoef(distCoef.clone()), mbf(bf), mThDepth(thDepth),
      mpReferenceKF(static_cast<KeyFrame*>(NULL))
 {
+
+    using namespace std::chrono;
     auto start = std::chrono::high_resolution_clock::now();
 
     // Frame ID
@@ -87,6 +89,13 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 
     if(mvKeys.empty())
         return;
+
+
+    auto end = high_resolution_clock::now();
+    auto time_span = duration_cast< duration<double> >( end-start );
+    std::cout << "frame feature extraction: " << time_span.count()<<std::endl;
+    end = start;
+
 
     UndistortKeyPoints();
 
@@ -118,9 +127,11 @@ Frame::Frame(const cv::Mat &imLeft, const cv::Mat &imRight, const double &timeSt
 
     AssignFeaturesToGrid();
 
-    auto end = std::chrono::high_resolution_clock::now();
-    auto duration = end - start;
-    std::cout<<"frame feature extraction and stereo matching: "<<duration.count()<<std::endl;
+
+    end = high_resolution_clock::now();
+    time_span = duration_cast< duration<double> >( end-start );
+    std::cout << "stereo matching: " << time_span.count()<<std::endl;
+
 }
 
 Frame::Frame(const cv::Mat &imGray, const cv::Mat &imDepth, const double &timeStamp, ORBextractor* extractor,ORBVocabulary* voc, cv::Mat &K, cv::Mat &distCoef, const float &bf, const float &thDepth)
@@ -233,6 +244,17 @@ Frame::Frame(const cv::Mat &imGray, const double &timeStamp, ORBextractor* extra
 
     AssignFeaturesToGrid();
 }
+
+
+cv::Mat Frame::GetPoseInverse()
+{
+  cv::Mat pose = cv::Mat::eye(4,4,CV_32F);
+  pose.rowRange(0,3).colRange(0,3) = mTcw.rowRange(0,3).colRange(0,3).t();
+  cv::Mat translation = mTcw.rowRange(0,3).col(3);
+  pose.rowRange(0,3).col(3) = - pose.rowRange(0,3).colRange(0,3) * translation;
+  return pose;
+}
+
 
 void Frame::AssignFeaturesToGrid()
 {
