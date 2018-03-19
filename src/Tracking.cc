@@ -522,9 +522,9 @@ void Tracking::Track()
                 incMsg->pose.position.y = incremental.at<float>(1,3);
                 incMsg->pose.position.z = incremental.at<float>(2,3);
                 incMsg->header.stamp = ros::Time(mCurrentFrame.mTimeStamp);
-                incMsg->header.frame_id = std::to_string(mpReferenceKF->mnId);
+                incMsg->header.frame_id = std::to_string(mpReferenceKF->mnId) + "T" + std::to_string(mpReferenceKF->nNextId);
                 incMsg->header.seq = mpReferenceKF->nNextId;
-                if (incMsg->header.seq != 0)
+                //if (incMsg->header.seq != 0)
                   mIncrementalPosePublisher.publish(incMsg);
 
 

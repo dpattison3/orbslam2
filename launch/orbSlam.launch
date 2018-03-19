@@ -1,9 +1,10 @@
 <launch>
   <node name="stereo_slam" pkg="orb_slam2" type="stereo_slam" output="screen"/>
 
-  <param name="setting_file_path" value="$(find orb_slam2)/sandbox/autorally_small.yaml" />
+  <param name="setting_file_path" value="$(find orb_slam2)/sandbox/beta_9_15_17.yaml" />
   <param name="vocabulary_file_path" value="$(find orb_slam2)/sandbox/ORBvoc.txt" />
   <param name="rectify" value="true" />
+  <param name="visualize" value="true" />
 
   <param name="left_camera_topic" value="/camera/left/image_raw"/>
   <param name="right_camera_topic" value="/camera/right/image_raw"/>
